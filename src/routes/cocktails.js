@@ -39,71 +39,75 @@ function isTimeoutError(err) {
   return err?.name === 'TimeoutError' || err?.name === 'AbortError';
 }
 
-router.get('/', async (req, res) => {
-  const letter = String(req.query.letter ?? 'a').toLowerCase();
-  if (!/^[a-z]$/.test(letter)) {
-    return res.status(400).json({
-      error: 'Query parameter "letter" must be a single character a-z.',
-    });
-  }
-
-  const cached = cache.get(letter);
-  if (cached && Date.now() - cached.at < TTL_MS) {
-    return res.json(cached.data);
-  }
-
-  if (typeof fetch !== 'function') {
-    return res.status(500).json({
-      error: 'Global fetch is not available. Node.js >= 18 is required.',
-    });
-  }
-
-  const url = `${BASE}/search.php?f=${letter}`;
-  let upstream;
+router.get('/', async (req, res, next) => {
   try {
-    upstream = await fetch(url, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': USER_AGENT,
-      },
-    });
-  } catch (err) {
-    if (isTimeoutError(err)) {
-      console.error(`[cocktails] upstream timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
-      return res.status(504).json({
-        error: `Upstream thecocktaildb timed out after ${FETCH_TIMEOUT_MS}ms.`,
+    const letter = String(req.query.letter ?? 'a').toLowerCase();
+    if (!/^[a-z]$/.test(letter)) {
+      return res.status(400).json({
+        error: 'Query parameter "letter" must be a single character a-z.',
       });
     }
-    console.error(`[cocktails] upstream fetch failed: ${err?.message || err}`);
-    return res.status(502).json({
-      error: 'Upstream thecocktaildb unreachable.',
-      detail: err?.message || String(err),
-    });
-  }
 
-  if (!upstream.ok) {
-    console.error(`[cocktails] upstream returned ${upstream.status} for ${url}`);
-    return res.status(502).json({
-      error: 'Upstream thecocktaildb error',
-      status: upstream.status,
-    });
-  }
+    const cached = cache.get(letter);
+    if (cached && Date.now() - cached.at < TTL_MS) {
+      return res.json(cached.data);
+    }
 
-  let body;
-  try {
-    body = await upstream.json();
+    if (typeof fetch !== 'function') {
+      return res.status(500).json({
+        error: 'Global fetch is not available. Node.js >= 18 is required.',
+      });
+    }
+
+    const url = `${BASE}/search.php?f=${letter}`;
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': USER_AGENT,
+        },
+      });
+    } catch (err) {
+      if (isTimeoutError(err)) {
+        console.error(`[cocktails] upstream timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
+        return res.status(504).json({
+          error: `Upstream thecocktaildb timed out after ${FETCH_TIMEOUT_MS}ms.`,
+        });
+      }
+      console.error(`[cocktails] upstream fetch failed: ${err?.message || err}`);
+      return res.status(502).json({
+        error: 'Upstream thecocktaildb unreachable.',
+        detail: err?.message || String(err),
+      });
+    }
+
+    if (!upstream.ok) {
+      console.error(`[cocktails] upstream returned ${upstream.status} for ${url}`);
+      return res.status(502).json({
+        error: 'Upstream thecocktaildb error',
+        status: upstream.status,
+      });
+    }
+
+    let body;
+    try {
+      body = await upstream.json();
+    } catch (err) {
+      console.error(`[cocktails] upstream returned non-JSON body: ${err?.message || err}`);
+      return res.status(502).json({
+        error: 'Upstream thecocktaildb returned an invalid JSON response.',
+      });
+    }
+
+    const drinks = Array.isArray(body?.drinks) ? body.drinks.filter(Boolean) : [];
+    const data = drinks.map(parseDrink);
+    cache.set(letter, { at: Date.now(), data });
+    return res.json(data);
   } catch (err) {
-    console.error(`[cocktails] upstream returned non-JSON body: ${err?.message || err}`);
-    return res.status(502).json({
-      error: 'Upstream thecocktaildb returned an invalid JSON response.',
-    });
+    return next(err);
   }
-
-  const drinks = Array.isArray(body?.drinks) ? body.drinks : [];
-  const data = drinks.map(parseDrink);
-  cache.set(letter, { at: Date.now(), data });
-  return res.json(data);
 });
 
 export default router;
