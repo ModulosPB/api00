@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>api00 — Cocktails</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #1a1a1a;
+        background: #f6f6f8;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      p.lead {
+        color: #555;
+        margin-top: 0;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin: 1.5rem 0;
+      }
+      button {
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 0.375rem;
+        background: #6334fb;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      button:hover:not(:disabled) {
+        background: #4b1fda;
+      }
+      button:disabled {
+        background: #aaa;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: #444;
+      }
+      button.secondary:hover:not(:disabled) {
+        background: #222;
+      }
+      label {
+        font-size: 0.9rem;
+        color: #333;
+      }
+      input {
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 0.25rem;
+        width: 3.5rem;
+        font-size: 1rem;
+        text-transform: lowercase;
+      }
+      #status {
+        padding: 0.5rem 0;
+        color: #555;
+      }
+      #status.error {
+        color: #b00020;
+      }
+      .cocktail {
+        background: white;
+        border: 1px solid #e3e3e8;
+        border-radius: 0.5rem;
+        padding: 1rem 1.25rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .cocktail h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.15rem;
+      }
+      .cocktail .meta {
+        font-size: 0.8rem;
+        color: #777;
+        margin-bottom: 0.5rem;
+      }
+      .cocktail ul {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+      .cocktail li {
+        margin: 0.15rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>api00 — Cocktails</h1>
+    <p class="lead">
+      Listado de cócteles obtenido de
+      <a href="https://www.thecocktaildb.com/" target="_blank" rel="noreferrer"
+        >thecocktaildb.com</a
+      >
+      a través del proxy <code>GET /api/cocktails?letter={a-z}</code>.
+    </p>
+
+    <div class="controls">
+      <label>
+        Letra inicial:
+        <input id="letter" type="text" value="a" maxlength="1" />
+      </label>
+      <button id="load">Cargar cócteles</button>
+      <button id="download" class="secondary" disabled>Descargar JSON</button>
+    </div>
+
+    <div id="status">Pulsa «Cargar cócteles» para empezar.</div>
+    <div id="list"></div>
+
+    <script>
+      (() => {
+        const loadBtn = document.getElementById('load');
+        const downloadBtn = document.getElementById('download');
+        const letterInput = document.getElementById('letter');
+        const statusEl = document.getElementById('status');
+        const listEl = document.getElementById('list');
+
+        let lastData = null;
+        let lastLetter = 'a';
+
+        async function loadCocktails() {
+          const letter = (letterInput.value || 'a').toLowerCase();
+          letterInput.value = letter;
+          lastLetter = letter;
+          loadBtn.disabled = true;
+          downloadBtn.disabled = true;
+          statusEl.className = '';
+          statusEl.textContent = `Cargando cócteles que empiezan por "${letter}"…`;
+          listEl.innerHTML = '';
+
+          try {
+            const res = await fetch(`/api/cocktails?letter=${encodeURIComponent(letter)}`);
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || `HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            lastData = data;
+
+            if (!data.length) {
+              statusEl.textContent = `No se encontraron cócteles para la letra "${letter}".`;
+              return;
+            }
+            statusEl.textContent = `${data.length} cóctel(es) encontrado(s).`;
+
+            for (const cocktail of data) {
+              const card = document.createElement('div');
+              card.className = 'cocktail';
+
+              const title = document.createElement('h2');
+              title.textContent = cocktail.name;
+              card.appendChild(title);
+
+              if (cocktail.category || cocktail.glass) {
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = [cocktail.category, cocktail.glass].filter(Boolean).join(' · ');
+                card.appendChild(meta);
+              }
+
+              const ul = document.createElement('ul');
+              for (const ing of cocktail.ingredients) {
+                const li = document.createElement('li');
+                li.textContent = ing.measure ? `${ing.measure} ${ing.name}` : ing.name;
+                ul.appendChild(li);
+              }
+              card.appendChild(ul);
+              listEl.appendChild(card);
+            }
+            downloadBtn.disabled = false;
+          } catch (err) {
+            statusEl.className = 'error';
+            statusEl.textContent = `Error: ${err.message}`;
+          } finally {
+            loadBtn.disabled = false;
+          }
+        }
+
+        function downloadJson() {
+          if (!lastData) return;
+          const blob = new Blob([JSON.stringify(lastData, null, 2)], {
+            type: 'application/json',
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `cocktails-${lastLetter}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }
+
+        loadBtn.addEventListener('click', loadCocktails);
+        downloadBtn.addEventListener('click', downloadJson);
+      })();
+    </script>
+  </body>
+</html>
