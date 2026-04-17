@@ -83,6 +83,18 @@
         padding: 1rem 1.25rem;
         margin-bottom: 0.75rem;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        cursor: pointer;
+        transition:
+          transform 0.08s ease,
+          box-shadow 0.08s ease,
+          border-color 0.08s ease;
+      }
+      .cocktail:hover,
+      .cocktail:focus-visible {
+        border-color: #6334fb;
+        box-shadow: 0 4px 12px rgba(99, 52, 251, 0.15);
+        transform: translateY(-1px);
+        outline: none;
       }
       .cocktail h2 {
         margin: 0 0 0.5rem 0;
@@ -99,6 +111,79 @@
       }
       .cocktail li {
         margin: 0.15rem 0;
+      }
+
+      dialog#detail {
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0;
+        max-width: 560px;
+        width: calc(100% - 2rem);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      }
+      dialog#detail::backdrop {
+        background: rgba(10, 10, 20, 0.55);
+        backdrop-filter: blur(2px);
+      }
+      .detail-body {
+        padding: 1.25rem 1.5rem 1.5rem;
+      }
+      .detail-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #eee;
+      }
+      .detail-header h2 {
+        margin: 0;
+        font-size: 1.35rem;
+      }
+      .detail-header .meta {
+        color: #666;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+      }
+      .detail-close {
+        background: transparent;
+        color: #333;
+        font-size: 1.4rem;
+        line-height: 1;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+      }
+      .detail-close:hover:not(:disabled) {
+        background: #eee;
+      }
+      .detail-thumb {
+        display: block;
+        width: 100%;
+        max-height: 260px;
+        object-fit: cover;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        background: #eee;
+      }
+      .detail-section-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #888;
+      }
+      .detail-ingredients {
+        margin: 0 0 1rem;
+        padding-left: 1.25rem;
+      }
+      .detail-ingredients li {
+        margin: 0.2rem 0;
+      }
+      .detail-id {
+        color: #999;
+        font-size: 0.75rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
     </style>
   </head>
@@ -124,6 +209,24 @@
     <div id="status">Pulsa «Cargar cócteles» para empezar.</div>
     <div id="list"></div>
 
+    <dialog id="detail" aria-labelledby="detail-title">
+      <div class="detail-header">
+        <div>
+          <h2 id="detail-title"></h2>
+          <div class="meta" id="detail-meta"></div>
+        </div>
+        <button type="button" class="detail-close" id="detail-close" aria-label="Cerrar">
+          &times;
+        </button>
+      </div>
+      <div class="detail-body">
+        <img id="detail-thumb" class="detail-thumb" alt="" hidden />
+        <h3 class="detail-section-title">Ingredientes</h3>
+        <ul class="detail-ingredients" id="detail-ingredients"></ul>
+        <div class="detail-id" id="detail-id"></div>
+      </div>
+    </dialog>
+
     <script>
       (() => {
         const loadBtn = document.getElementById('load');
@@ -131,9 +234,56 @@
         const letterInput = document.getElementById('letter');
         const statusEl = document.getElementById('status');
         const listEl = document.getElementById('list');
+        const detailEl = document.getElementById('detail');
+        const detailTitle = document.getElementById('detail-title');
+        const detailMeta = document.getElementById('detail-meta');
+        const detailThumb = document.getElementById('detail-thumb');
+        const detailIngredients = document.getElementById('detail-ingredients');
+        const detailId = document.getElementById('detail-id');
+        const detailClose = document.getElementById('detail-close');
 
         let lastData = null;
         let lastLetter = 'a';
+
+        function openDetail(cocktail) {
+          detailTitle.textContent = cocktail.name;
+          detailMeta.textContent = [cocktail.category, cocktail.glass].filter(Boolean).join(' · ');
+          if (cocktail.thumbnail) {
+            detailThumb.src = cocktail.thumbnail;
+            detailThumb.alt = cocktail.name;
+            detailThumb.hidden = false;
+          } else {
+            detailThumb.hidden = true;
+            detailThumb.removeAttribute('src');
+            detailThumb.alt = '';
+          }
+          detailIngredients.innerHTML = '';
+          for (const ing of cocktail.ingredients) {
+            const li = document.createElement('li');
+            li.textContent = ing.measure ? `${ing.measure} ${ing.name}` : ing.name;
+            detailIngredients.appendChild(li);
+          }
+          detailId.textContent = cocktail.id ? `id: ${cocktail.id}` : '';
+
+          if (typeof detailEl.showModal === 'function') {
+            if (!detailEl.open) detailEl.showModal();
+          } else {
+            detailEl.setAttribute('open', '');
+          }
+        }
+
+        function closeDetail() {
+          if (typeof detailEl.close === 'function' && detailEl.open) {
+            detailEl.close();
+          } else {
+            detailEl.removeAttribute('open');
+          }
+        }
+
+        detailClose.addEventListener('click', closeDetail);
+        detailEl.addEventListener('click', (event) => {
+          if (event.target === detailEl) closeDetail();
+        });
 
         async function loadCocktails() {
           const letter = (letterInput.value || 'a').toLowerCase();
@@ -163,6 +313,9 @@
             for (const cocktail of data) {
               const card = document.createElement('div');
               card.className = 'cocktail';
+              card.setAttribute('role', 'button');
+              card.setAttribute('tabindex', '0');
+              card.setAttribute('aria-label', `Ver detalles de ${cocktail.name}`);
 
               const title = document.createElement('h2');
               title.textContent = cocktail.name;
@@ -182,6 +335,15 @@
                 ul.appendChild(li);
               }
               card.appendChild(ul);
+
+              card.addEventListener('click', () => openDetail(cocktail));
+              card.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openDetail(cocktail);
+                }
+              });
+
               listEl.appendChild(card);
             }
             downloadBtn.disabled = false;
