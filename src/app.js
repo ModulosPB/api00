@@ -10,11 +10,26 @@ import { errorHandler } from './middleware/errorHandler.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '..', 'public');
 
-export function createApp() {
+function requestLogger(req, res, next) {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log(
+      `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} ${ms}ms`,
+    );
+  });
+  next();
+}
+
+export function createApp({ logRequests = process.env.NODE_ENV !== 'test' } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
   app.use(express.json());
+
+  if (logRequests) {
+    app.use(requestLogger);
+  }
 
   app.use(express.static(publicDir));
 

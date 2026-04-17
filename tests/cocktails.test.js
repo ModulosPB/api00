@@ -35,7 +35,7 @@ describe('GET /api/cocktails', () => {
     const res = await request(app).get('/api/cocktails?letter=m');
 
     expect(res.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls[0][0]).toBe(
       'https://www.thecocktaildb.com/api/json/v1/1/search.php?f=m',
     );
     expect(res.body).toHaveLength(1);
@@ -73,7 +73,7 @@ describe('GET /api/cocktails', () => {
     const app = createApp();
     const res = await request(app).get('/api/cocktails');
     expect(res.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls[0][0]).toBe(
       'https://www.thecocktaildb.com/api/json/v1/1/search.php?f=a',
     );
   });
@@ -99,6 +99,56 @@ describe('GET /api/cocktails', () => {
     expect(res.body.error).toMatch(/thecocktaildb/i);
   });
 
+  it('returns 504 when upstream fetch times out / is aborted', async () => {
+    const abortErr = new Error('The operation was aborted due to timeout');
+    abortErr.name = 'TimeoutError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortErr));
+    const app = createApp();
+    const res = await request(app).get('/api/cocktails?letter=d');
+    expect(res.status).toBe(504);
+    expect(res.body.error).toMatch(/timed out/i);
+  });
+
+  it('returns 502 when upstream fetch throws a generic network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ENOTFOUND')));
+    const app = createApp();
+    const res = await request(app).get('/api/cocktails?letter=e');
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/unreachable/i);
+    expect(res.body.detail).toBe('ENOTFOUND');
+  });
+
+  it('returns 502 when upstream body is not valid JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError('Unexpected token < in JSON');
+        },
+      }),
+    );
+    const app = createApp();
+    const res = await request(app).get('/api/cocktails?letter=f');
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/invalid json/i);
+  });
+
+  it('sends a User-Agent header and an AbortSignal to the upstream', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ drinks: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const app = createApp();
+    await request(app).get('/api/cocktails?letter=g');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.headers['User-Agent']).toMatch(/api00/);
+    expect(options.headers.Accept).toBe('application/json');
+    expect(options.signal).toBeDefined();
+  });
+
   it('caches responses per letter (upstream called once for repeated requests)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -106,8 +156,8 @@ describe('GET /api/cocktails', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const app = createApp();
-    await request(app).get('/api/cocktails?letter=c');
-    await request(app).get('/api/cocktails?letter=c');
+    await request(app).get('/api/cocktails?letter=h');
+    await request(app).get('/api/cocktails?letter=h');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
