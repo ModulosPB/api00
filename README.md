@@ -34,12 +34,38 @@ The API listens on `http://localhost:3000` by default.
 
 ## Endpoints
 
-| Method | Path      | Description                         |
-| ------ | --------- | ----------------------------------- |
-| GET    | `/`       | API metadata (name, version, links) |
-| GET    | `/health` | Liveness probe with uptime          |
+| Method | Path                          | Description                                                       |
+| ------ | ----------------------------- | ----------------------------------------------------------------- |
+| GET    | `/`                           | Static HTML UI with buttons to load/download cocktails            |
+| GET    | `/api`                        | API metadata (name, version, endpoints)                           |
+| GET    | `/api/cocktails?letter={a-z}` | List of cocktails (name + ingredients) proxied from thecocktaildb |
+| GET    | `/health`                     | Liveness probe with uptime                                        |
 
 Unknown routes return `404` with a JSON body `{ "error": "Not Found", "path": "..." }`.
+
+### `/api/cocktails`
+
+Proxies the free [thecocktaildb](https://www.thecocktaildb.com/) API
+(`search.php?f={letter}`) and returns a trimmed list:
+
+```json
+[
+  {
+    "id": "11007",
+    "name": "Margarita",
+    "category": "Ordinary Drink",
+    "glass": "Cocktail glass",
+    "thumbnail": "https://...",
+    "ingredients": [
+      { "name": "Tequila", "measure": "1 1/2 oz" },
+      { "name": "Triple sec", "measure": "1/2 oz" }
+    ]
+  }
+]
+```
+
+Responses are cached in memory per letter for 10 minutes. Invalid `letter` values return
+`400`; upstream errors return `502`.
 
 ## Scripts
 
@@ -57,20 +83,24 @@ Unknown routes return `404` with a JSON body `{ "error": "Not Found", "path": ".
 ## Project layout
 
 ```
+public/
+  index.html          # Static UI with "Cargar cócteles" and "Descargar JSON"
 src/
   app.js              # Express app factory (testable, no listen)
   server.js           # Entrypoint: creates app and listens on PORT
   config/
     env.js            # Typed env loader (dotenv)
   routes/
-    index.js          # GET /
+    index.js          # GET /api  (metadata)
     health.js         # GET /health
+    cocktails.js      # GET /api/cocktails?letter={a-z}
   middleware/
     notFound.js       # 404 JSON handler
     errorHandler.js   # Centralized error handler
 tests/
   root.test.js
   health.test.js
+  cocktails.test.js
 ```
 
 ## Environment variables
