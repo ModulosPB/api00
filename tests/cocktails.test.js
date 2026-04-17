@@ -149,6 +149,27 @@ describe('GET /api/cocktails', () => {
     expect(options.signal).toBeDefined();
   });
 
+  it('skips null entries in the upstream drinks array without crashing', async () => {
+    const validDrink = {
+      idDrink: '1',
+      strDrink: 'Negroni',
+      strIngredient1: 'Gin',
+      strMeasure1: '1 oz',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ drinks: [null, validDrink, null] }),
+      }),
+    );
+    const app = createApp();
+    const res = await request(app).get('/api/cocktails?letter=n');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].name).toBe('Negroni');
+  });
+
   it('caches responses per letter (upstream called once for repeated requests)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
